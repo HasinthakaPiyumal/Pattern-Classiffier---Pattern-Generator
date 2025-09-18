@@ -1,10 +1,12 @@
 import torch,os
 from transformers import AutoTokenizer, AutoModel
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 class EmbeddingGenerator:
     def __init__(self,model_name:str="microsoft/codebert-base", chunk_size:int=128, stride:int=68):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name).to(device)
         self.chunk_size = chunk_size
         self.stride = stride
 
@@ -29,6 +31,7 @@ class EmbeddingGenerator:
                 attention_masks.append([1]*len(chunk)+[0]*padding_length)
             inputs = {'input_ids': torch.tensor(padded_input_ids), 'attention_mask': torch.tensor(attention_masks)}
 
+        inputs = {k: v.to(device) for k, v in inputs.items()}
 
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -41,14 +44,16 @@ class EmbeddingGenerator:
 
         return {"last_hidden_state_mean": code_embedding2, "pooler_output_mean": code_embedding1}
     
+    
 
 if __name__ == "__main__":
     from utils import get_all_python_files, load_code_from_file,get_folders
     import pandas as pd
-    # repo_path = "/home/hasinthaka/Documents/Projects/AI/AI Pattern Mining/Pattern Validator/reposistories/test"
+    repo_path = "/home/hasinthaka/Documents/Projects/AI/AI Pattern Mining/Pattern Validator/reposistories/test"
     repo_path = "/home/hasinthaka/Documents/Projects/AI/AI Pattern Mining/Pattern Validator/reposistories/model_testing"
-    embedding_generator = EmbeddingGenerator()
-    embedding_generator = EmbeddingGenerator()
+    repo_path = "/home/hasinthaka/Documents/Projects/AI/AI Pattern Mining/Pattern Validator/reposistories/AI Patterns"
+
+    embedding_generator = EmbeddingGenerator(model_name="FacebookAI/roberta-base")
     patterns = get_folders(repo_path)
 
     embedding_size = embedding_generator.model.config.hidden_size
@@ -59,6 +64,8 @@ if __name__ == "__main__":
     embeddings_pom = pd.DataFrame(columns=columns)
 
     for pattern in patterns:
+        if pattern == "embeddings":
+            continue
         print("Processing pattern:", pattern)
         python_files = get_all_python_files(repo_path+"/"+pattern)
         for file in python_files:
@@ -70,5 +77,5 @@ if __name__ == "__main__":
 
     os.makedirs(f"{repo_path}/embeddings",exist_ok=True)
 
-    embeddings_lhsm.to_csv(f"{repo_path}/embeddings/embeddings_last_hidden_state_mean.csv",index=False)
-    embeddings_pom.to_csv(f"{repo_path}/embeddings/embeddings_pooler_output_mean.csv",index=False)
+    embeddings_lhsm.to_csv(f"{repo_path}/embeddings/embeddings_roberta_base_last_hidden_state_mean.csv",index=False)
+    embeddings_pom.to_csv(f"{repo_path}/embeddings/embeddings_roberta_base_pooler_output_mean.csv",index=False)
