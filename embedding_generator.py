@@ -1,5 +1,5 @@
 import torch,os
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel,T5EncoderModel
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -9,6 +9,8 @@ class EmbeddingGenerator:
         self.model = AutoModel.from_pretrained(model_name).to(device)
         self.chunk_size = chunk_size
         self.stride = stride
+        if self.tokenizer.pad_token is None:
+          self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def generate_embedding(self,code:str):
         all_tokens = self.tokenizer.encode(code, add_special_tokens=False)
@@ -36,32 +38,26 @@ class EmbeddingGenerator:
         with torch.no_grad():
             outputs = self.model(**inputs)
 
-        code_embedding1 = torch.mean(outputs.pooler_output,0)
-
         expanded_attention_mask = inputs['attention_mask'].unsqueeze(-1).expand(outputs.last_hidden_state.shape)
         masked_embeddings = expanded_attention_mask * outputs.last_hidden_state
-        code_embedding2 = (masked_embeddings.sum(1)/ expanded_attention_mask.sum(1)).mean(0)
+        code_embedding = (masked_embeddings.sum(1)/ expanded_attention_mask.sum(1)).mean(0)
 
-        return {"last_hidden_state_mean": code_embedding2, "pooler_output_mean": code_embedding1}
+        return code_embedding
     
-    
+   
 
 if __name__ == "__main__":
     from utils import get_all_python_files, load_code_from_file,get_folders
     import pandas as pd
-    repo_path = "/home/hasinthaka/Documents/Projects/AI/AI Pattern Mining/Pattern Validator/reposistories/test"
-    repo_path = "/home/hasinthaka/Documents/Projects/AI/AI Pattern Mining/Pattern Validator/reposistories/model_testing"
     repo_path = "/home/hasinthaka/Documents/Projects/AI/AI Pattern Mining/Pattern Validator/reposistories/AI Patterns"
 
-    embedding_generator = EmbeddingGenerator(model_name="FacebookAI/roberta-base")
+    embedding_generator = EmbeddingGenerator(model_name="microsoft/CodeGPT-small-py")
     patterns = get_folders(repo_path)
 
     embedding_size = embedding_generator.model.config.hidden_size
-    print("Embedding size:", embedding_size)
 
     columns = ["pattern"]+[f'dim_{i}' for i in range(embedding_size)]
-    embeddings_lhsm = pd.DataFrame(columns=columns)
-    embeddings_pom = pd.DataFrame(columns=columns)
+    embeddings_df = pd.DataFrame(columns=columns)
 
     for pattern in patterns:
         if pattern == "embeddings":
@@ -72,10 +68,8 @@ if __name__ == "__main__":
             code = load_code_from_file(file)
             embeddings = embedding_generator.generate_embedding(code)
             print("Computed embeddings for file:", file)
-            embeddings_lhsm.loc[len(embeddings_lhsm)] = [pattern]+embeddings["last_hidden_state_mean"].tolist()
-            embeddings_pom.loc[len(embeddings_pom)] = [pattern]+embeddings["pooler_output_mean"].tolist()
+            embeddings_df.loc[len(embeddings_df)] = [pattern]+embeddings.tolist()
 
     os.makedirs(f"{repo_path}/embeddings",exist_ok=True)
 
-    embeddings_lhsm.to_csv(f"{repo_path}/embeddings/embeddings_roberta_base_last_hidden_state_mean.csv",index=False)
-    embeddings_pom.to_csv(f"{repo_path}/embeddings/embeddings_roberta_base_pooler_output_mean.csv",index=False)
+    embeddings_df.to_csv(f"{repo_path}/embeddings/embeddings_codetgpt_py.csv",index=False)
